@@ -177,14 +177,13 @@ const wrapping = (x, y, map) => {
 }
 
 const Maze = class {
-  constructor(width, height, defaultValue) {
+  constructor(width, height) {
     this.width = width
     this.height = height
-    this.array = Array(width * height).fill(defaultValue)
+    this.array = Array(width * height).fill(0)
     for (let [x, y, r] of this.entries().filter(([x, y, r]) => !this.has(x, y) ))
       this.set(x, y, 0)
     this.walls = []
-    this.base = defaultValue
   }
   get(x, y) {
     return this.array[y * this.width + x]
@@ -201,13 +200,9 @@ const Maze = class {
 }
 
 const SeedMaze = class {
-  constructor({width, height, minSeeds, maxSeeds, seedSpread, turnChance, branchChance, terminationChance, wallWrapping, type, mazeSeed, debug}) {
-    this.placement = {
-      default: type,
-      seed: type === 1 ? 0 : 1,
-    }
-    this.map = new Maze(width, height, this.placement.default)
-    
+  constructor({width, height, seedAmount, straightChance, turnChance, mazeSeed, debug}) {
+    this.map = new Maze(width, height)
+  
     if (mazeSeed === '') {
       this.mazeSeed = Math.floor(Math.random() * 2147483646)
     } else if (/^\d+$/.test(mazeSeed)) {
@@ -215,93 +210,69 @@ const SeedMaze = class {
     } else {
       this.mazeSeed = cyrb53(mazeSeed)
     }
-    this.mapSeed = new Seed(this.mazeSeed)
+    this.mapSeed = new Seed(this.mazeSeed)    
     
     this.seeds = []
-    this.seedAmount = Math.floor(this.mapSeed.nextFloat() * (maxSeeds - minSeeds)) + minSeeds
-    this.seedSpread = seedSpread
-    
-    this.type = type
+    this.seedAmount = seedAmount
     this.turnChance = turnChance
-    this.branchChance = branchChance
-    this.terminationChance = terminationChance
-    this.wallWrapping = wallWrapping
+    this.straightChance = straightChance
     
     this.debug = debug
   }
   async init() {
     await this.seedWalls()
     await this.growWalls()
-    await this.sprinkleWalls()
     await findPockets(this.map, this.debug)
     let walls = this.map.array.filter(r => r === 1)
     await mergeWalls(this.map, this.debug)
-    
-    //while (this.map.array.filter(r => r === 1).length > 0)
-      //utils.combineWalls(this.map)
+
     await placeWalls(this.map)
     return [walls, this.mazeSeed]
   }
+  async validateCell(position) {
+    if (this.map.get(position.x, position.y) === 1) return false
+    if (!this.map.has(position.x, position.y)) return false
+    return true
+  }
   async seedWalls() {
     let i = 0
+    
     while (this.seeds.length < this.seedAmount) {
       if (i > 1000) throw Error('Loop overflow')
       i++
       let loc = { x: 0, y: 0 }
       loc.x = Math.floor(this.mapSeed.nextFloat() * this.map.width) - 1
       loc.y = Math.floor(this.mapSeed.nextFloat() * this.map.height) - 1
-      if (this.seeds.some(r => (Math.abs(loc.x - r.x) <= this.seedSpread && Math.abs(loc.y - r.y) <= this.seedSpread))) continue
-      if (!this.map.has(loc.x, loc.y)) continue
-      this.seeds.push(loc)
-      this.map.set(loc.x, loc.y, this.placement.seed)
-      await placeWalls(this.map, this.debug ? 0 : -1)
-    }
-  }
-  async sprinkleWalls() {
-    for (let i = 0; i < 15; i++) { 
-      let loc = { x: 0, y: 0 }
-      loc.x = Math.floor(this.mapSeed.nextFloat() * this.map.width) - 1
-      loc.y = Math.floor(this.mapSeed.nextFloat() * this.map.height) - 1
-      if (this.map.entries().some(([x, y, r]) => r === 1 && (Math.abs(loc.x - x) <= this.seedSpread && Math.abs(loc.y - y) <= this.seedSpread))) continue
-      if (!this.map.has(loc.x, loc.y)) continue
-      this.map.set(loc.x, loc.y, this.placement.seed)
-      await placeWalls(this.map, this.debug ? 0 : -1)
+      if (await this.validateCell(loc)) {
+        this.seeds.push(loc)
+        this.map.set(loc.x, loc.y, 1)
+        await placeWalls(this.map, this.debug ? 0 : -1)
+      }
     }
   }
   async growWalls() {
     let perpendicular = ([x, y]) => [[y, -x], [-y, x]]
-    for (let [i, seed] of this.seeds.entries()) {
+    for (let seed of this.seeds) {
       let dir = direction[Math.floor(this.mapSeed.nextFloat() * 4)]
-      let termination = 1
-      do {
-        termination = this.mapSeed.nextFloat()
+      while(true) {
         let [x, y] = dir
-        seed.x += x
-        seed.y += y
-        if (this.map.get(seed.x, seed.y) === 1) break
-        if (!this.map.has(seed.x, seed.y)) {
-          if (!this.wallWrapping) break
-          let wrap = utils.wrapping(seed.x, seed.y, this.map)
-          seed.x = wrap.x
-          seed.y = wrap.y
-        }
-        this.map.set(seed.x, seed.y, this.placement.seed)
-        if (this.mapSeed.nextFloat() <= this.branchChance) {
-          if (this.seeds.length > 75) continue
-          let [ xx, yy ] = perpendicular(dir)[Math.floor(this.mapSeed.nextFloat() * 2)]
-          if (!this.map.has(seed.x + xx, seed.y + yy)) {
-            if (!this.wallWrapping) break
-            let wrap = utils.wrapping(seed.x + xx, seed.y + yy, this.map)
-            seed.x = wrap.x
-            seed.y = wrap.y
-          }
-          this.seeds.push({ x: seed.x + xx, y: seed.y + yy })
-          this.map.set(seed.x + xx, seed.y + yy, this.placement.seed)
+        if (this.mapSeed.nextFloat() <= this.straightChance) {
+          seed.x += x
+          seed.y += y
         } else if (this.mapSeed.nextFloat() <= this.turnChance) {
-          dir = perpendicular(dir)[Math.floor(this.mapSeed.nextFloat() * 2)]
+          let [xx, yy] = perpendicular(dir)[Math.floor(this.mapSeed.nextFloat() * 2)]
+          seed.x += xx
+          seed.y += yy
+        } else {
+          break
         }
-        await placeWalls(this.map, this.debug ? 0 : -1)
-      } while (termination >= this.terminationChance)
+        if (await this.validateCell(seed)) {
+          this.map.set(seed.x, seed.y, 1)
+          await placeWalls(this.map, this.debug ? 0 : -1)
+        } else {
+          break
+        }
+      }
     }
   }
 }  
@@ -311,39 +282,31 @@ let running = false
 run.onclick = async () => {
   if (!running) {
     running = true
-    for (let i = 0; i < 100; i++) {
-      pixelSize = Math.floor(41 / 41 * 13)
-      canvas.width = 555
-      canvas.height = 555
-      ctx.scale(pixelSize, pixelSize)
-      ctx.roundRect(1, 1, 41, 41, 0.75)
-      ctx.lineWidth = 0.95
-      ctx.strokeStyle = '#797979'
-      ctx.fillStyle = '#cdcdcd'
-      ctx.fill()
-      ctx.stroke()
-      let map = new SeedMaze({
-        width: 40,
-        height: 40,
-        minSeeds: 30,
-        maxSeeds: 50,
-        seedSpread: 2,
-        turnChance: 0.2,
-        branchChance: 0,
-        terminationChance: 0.1,
-        wallWrapping: false,
-        type: 0,
-        mazeSeed: document.getElementById('input').value,
-        debug: document.getElementById('debug').checked,
-      })
-      let [ maze, seed ] = await map.init()
-      let takenSpace = maze.length
-      
-      document.getElementById('seed').textContent = seed
-      document.getElementById('image').setAttribute('download', `seed_maze_${seed}.png`)
-      //if (takenSpace >= 300) break
-      break
-    }
+    pixelSize = Math.floor(41 / 41 * 13)
+    canvas.width = 555
+    canvas.height = 555
+    ctx.scale(pixelSize, pixelSize)
+    ctx.roundRect(1, 1, 41, 41, 0.75)
+    ctx.lineWidth = 0.95
+    ctx.strokeStyle = '#797979'
+    ctx.fillStyle = '#cdcdcd'
+    ctx.fill()
+    ctx.stroke()
+    let map = new SeedMaze({
+      width: 40,
+      height: 40,
+      seedAmount: 100,
+      straightChance: 0.75,
+      turnChance: 0.25,
+      mazeSeed: document.getElementById('input').value,
+      debug: document.getElementById('debug').checked,
+    })
+    
+    let [ maze, seed ] = await map.init()
+    
+    document.getElementById('seed').textContent = seed
+    document.getElementById('image').setAttribute('download', `seed_maze_${seed}.png`)
+    
     running = false
     alreadyPlaced.length = 0
   }
