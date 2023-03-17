@@ -8,19 +8,28 @@
 <body>
   <style>
     span {
-      float: left;
-      width: 25rem;
+      float: down;
+      width: 20rem;
+    }
+    #run1, #run2, #run3 {
+      float: down;
+      width: 3rem;
     }
   </style>
   <span>
+    <input id="input" placeholder="Input seed here" style="width: 6rem;">
     <button id="run">Run</button>
+    <span style="color: #000000">Seed Maze Gen</span>
+    <span id="seed"></span>
     <br>
-    <canvas id="canvas">
   </span>
-  <span style="float:left">
-    <div>Debugging
-      <small style="color: #006600" id="status">Ready</small>
-    </div>
+  <span>
+    <button id="download">Export Canvas</button>
+    <a id="image" download="a.png">
+    <input type="checkbox" id="debug" style="width: 2.6rem">
+    <label for="debug">Debug</label>
+    <br>
   </span>
   <script src="index.js" type="module"></script>
+  <canvas id="canvas"></canvas>
 </body>
