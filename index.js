@@ -203,13 +203,7 @@ const SeedMaze = class {
   constructor({width, height, seedAmount, straightChance, turnChance, mazeSeed, debug}) {
     this.map = new Maze(width, height)
   
-    if (mazeSeed === '') {
-      this.mazeSeed = Math.floor(Math.random() * 2147483646)
-    } else if (/^\d+$/.test(mazeSeed)) {
-      this.mazeSeed = parseInt(mazeSeed)
-    } else {
-      this.mazeSeed = cyrb53(mazeSeed)
-    }
+    this.mazeSeed = mazeSeed === '' ? Math.floor(Math.random() * 2147483646) : /^\d+$/.test(mazeSeed) ? parseInt(mazeSeed) : cyrb53(mazeSeed)
     this.mapSeed = new Seed(this.mazeSeed)    
     
     this.seeds = []
